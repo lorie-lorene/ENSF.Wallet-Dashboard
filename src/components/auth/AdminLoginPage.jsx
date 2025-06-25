@@ -87,14 +87,21 @@ const AdminLoginPage = ({ onLoginSuccess }) => {
         console.log('✅ Login response received');
         
         // Validate response structure
-        if (!data.token) {
+        if (!data.accessToken) {
           throw new Error('Token d\'authentification manquant dans la réponse du serveur');
         }
 
         return {
           success: true,
-          token: data.token,
-          user: data.user || { username: credentials.username },
+          token: data.accessToken,
+          user: { username: data.username,
+            email: data.email,
+            nom: data.nom,
+            prenom: data.prenom,
+            roles: data.roles,
+            idAgence: data.idAgence,
+            nomAgence: data.nomAgence,
+            accessToken: data.accessToken },
           message: data.message || 'Connexion réussie'
         };
         
