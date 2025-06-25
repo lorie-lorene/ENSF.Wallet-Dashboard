@@ -1,5 +1,5 @@
 /**
- * 🔗 Complete API Service for Admin Dashboard
+ * 🔗 Enhanced API Service for Admin Dashboard with Authentication
  * 
  * This service handles ALL backend integrations for:
  * - UserService: Authentication, user management, financial operations
@@ -7,10 +7,12 @@
  * 
  * Features:
  * - Professional error handling with retry mechanisms
- * - JWT token management
+ * - JWT token management and automatic header injection
  * - Request/response logging
  * - Environment-based configuration
  * - Type-safe API responses
+ * - Authentication state management
+ * - Automatic token refresh handling
  */
 
 class ApiService {
@@ -63,698 +65,379 @@ class ApiService {
           adminUserDetails: (userId) => `/api/v1/agence/admin/users/${userId}`,
           adminUserStatistics: '/api/v1/agence/admin/users/statistics',
           adminUserExport: '/api/v1/agence/admin/users/export',
-          adminCreateUser: '/api/v1/agence/admin/users',
-          adminUpdateUser: (userId) => `/api/v1/agence/admin/users/${userId}`,
-          adminBlockUser: (userId) => `/api/v1/agence/admin/users/${userId}/block`,
-          adminUnblockUser: (userId) => `/api/v1/agence/admin/users/${userId}/unblock`,
+          adminUserCreate: '/api/v1/agence/admin/users',
+          adminUserUpdate: (userId) => `/api/v1/agence/admin/users/${userId}`,
+          adminUserBlock: (userId) => `/api/v1/agence/admin/users/${userId}/block`,
+          adminUserUnblock: (userId) => `/api/v1/agence/admin/users/${userId}/unblock`,
           
           // Document Approval endpoints
           pendingDocuments: '/api/v1/agence/admin/documents/pending',
-          documentReview: (documentId) => `/api/v1/agence/admin/documents/${documentId}/review`,
-          approveDocument: (documentId) => `/api/v1/agence/admin/documents/${documentId}/approve`,
-          rejectDocument: (documentId) => `/api/v1/agence/admin/documents/${documentId}/reject`,
+          documentReview: (docId) => `/api/v1/agence/admin/documents/${docId}/review`,
+          documentApprove: (docId) => `/api/v1/agence/admin/documents/${docId}/approve`,
+          documentReject: (docId) => `/api/v1/agence/admin/documents/${docId}/reject`,
           documentStatistics: '/api/v1/agence/admin/documents/statistics',
-          bulkApproveDocuments: '/api/v1/agence/admin/documents/bulk-approve',
-          bulkRejectDocuments: '/api/v1/agence/admin/documents/bulk-reject',
+          bulkApprove: '/api/v1/agence/admin/documents/bulk-approve',
+          bulkReject: '/api/v1/agence/admin/documents/bulk-reject',
           
-          // Agence Management endpoints
-          agenceAccounts: (idAgence) => `/api/v1/agence/${idAgence}/comptes`,
-          findAccount: (numeroCompte) => `/api/v1/agence/comptes/${numeroCompte}`,
-          accountBalance: (numeroCompte) => `/api/v1/agence/comptes/${numeroCompte}/solde`,
-          accountHistory: (numeroCompte) => `/api/v1/agence/comptes/${numeroCompte}/transactions`,
-          searchAccounts: (idAgence) => `/api/v1/agence/${idAgence}/comptes/search`,
-          
-          // Transaction endpoints
-          processTransaction: '/api/v1/agence/transactions',
-          estimateTransactionFees: '/api/v1/agence/transactions/estimate-frais',
-          
-          // Account Management endpoints
-          activateAccount: (numeroCompte) => `/api/v1/agence/comptes/${numeroCompte}/activate`,
-          suspendAccount: (numeroCompte) => `/api/v1/agence/comptes/${numeroCompte}/suspend`,
-          
-          // KYC endpoints
-          validateKYC: '/api/v1/agence/kyc/validate',
-          kycReport: (idClient) => `/api/v1/agence/kyc/${idClient}/report`,
-          
-          // Statistics endpoints
-          agenceStatistics: (idAgence) => `/api/v1/agence/${idAgence}/statistics`,
-          agenceInfo: (idAgence) => `/api/v1/agence/${idAgence}/info`,
-          
-          // Configuration endpoints
-          fraisConfiguration: '/api/v1/agence/config/frais',
-          
-          // Health check
-          health: '/api/v1/agence/health'
+          // Agency Management endpoints
+          agencies: '/api/v1/agence/admin/agencies',
+          agencyDetails: (agencyId) => `/api/v1/agence/admin/agencies/${agencyId}`,
+          agencyCreate: '/api/v1/agence/admin/agencies',
+          agencyUpdate: (agencyId) => `/api/v1/agence/admin/agencies/${agencyId}`,
+          agencyStatistics: '/api/v1/agence/admin/agencies/statistics'
         }
       }
     };
 
-    // Request interceptors and default settings
-    this.defaultHeaders = {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    };
-
-    // Token management
-    this.tokenKey = 'authToken';
-    this.refreshTokenKey = 'refreshToken';
+    // Request interceptors
+    this.requestInterceptors = [];
+    this.responseInterceptors = [];
+    
+    // Initialize authentication
+    this.initializeAuth();
   }
 
   // =====================================
-  // AUTHENTICATION & TOKEN MANAGEMENT
+  // AUTHENTICATION MANAGEMENT
   // =====================================
+
+  /**
+   * Initialize authentication state
+   */
+  initializeAuth() {
+    this.currentToken = localStorage.getItem('authToken');
+    this.currentUser = this.getCurrentUser();
+    
+    if (this.currentToken) {
+      console.log('🔐 ApiService: Authentication token loaded');
+    }
+  }
 
   /**
    * Get current authentication token
    */
   getAuthToken() {
-    return localStorage.getItem(this.tokenKey);
+    return this.currentToken || localStorage.getItem('authToken') || window.authToken;
   }
 
   /**
-   * Get refresh token
+   * Set authentication token
    */
-  getRefreshToken() {
-    return localStorage.getItem(this.refreshTokenKey);
+  setAuthToken(token) {
+    this.currentToken = token;
+    window.authToken = token;
+    localStorage.setItem('authToken', token);
   }
 
   /**
-   * Set authentication tokens
+   * Get current user data
    */
-  setTokens(accessToken, refreshToken = null) {
-    localStorage.setItem(this.tokenKey, accessToken);
-    if (refreshToken) {
-      localStorage.setItem(this.refreshTokenKey, refreshToken);
-    }
-  }
-
-  /**
-   * Clear authentication tokens
-   */
-  clearTokens() {
-    localStorage.removeItem(this.tokenKey);
-    localStorage.removeItem(this.refreshTokenKey);
-  }
-
-  /**
-   * Get authentication headers
-   */
-  getAuthHeaders() {
-    const token = this.getAuthToken();
-    return {
-      ...this.defaultHeaders,
-      ...(token && { 'Authorization': `Bearer ${token}` })
-    };
-  }
-
-  // =====================================
-  // CORE HTTP METHODS
-  // =====================================
-
-  /**
-   * Generic API call with error handling and retry mechanism
-   */
-  async makeRequest(url, options = {}) {
-    const maxRetries = 3;
-    let lastError;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        console.log(`🔗 API Request [Attempt ${attempt}]:`, {
-          method: options.method || 'GET',
-          url,
-          headers: options.headers
-        });
-
-        const response = await fetch(url, {
-          ...options,
-          headers: {
-            ...this.getAuthHeaders(),
-            ...options.headers
-          }
-        });
-
-        // Handle different HTTP status codes
-        if (response.status === 401) {
-          // Try to refresh token
-          const refreshed = await this.refreshAuthToken();
-          if (refreshed && attempt < maxRetries) {
-            continue; // Retry with new token
-          } else {
-            this.clearTokens();
-            throw new Error('UNAUTHORIZED');
-          }
-        }
-
-        if (response.status === 403) {
-          throw new Error('FORBIDDEN');
-        }
-
-        if (response.status === 404) {
-          throw new Error('NOT_FOUND');
-        }
-
-        if (response.status >= 500) {
-          throw new Error('SERVER_ERROR');
-        }
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.message || `HTTP ${response.status}`);
-        }
-
-        const data = await response.json();
-        
-        console.log(`✅ API Response [${response.status}]:`, data);
-        
-        return {
-          success: true,
-          data,
-          status: response.status
-        };
-
-      } catch (error) {
-        lastError = error;
-        console.error(`❌ API Error [Attempt ${attempt}]:`, error.message);
-
-        // Don't retry certain errors
-        if (error.message === 'FORBIDDEN' || error.message === 'NOT_FOUND') {
-          break;
-        }
-
-        // Wait before retry (exponential backoff)
-        if (attempt < maxRetries) {
-          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-        }
-      }
-    }
-
-    return {
-      success: false,
-      error: lastError.message,
-      status: 0
-    };
-  }
-
-  /**
-   * Refresh authentication token
-   */
-  async refreshAuthToken() {
+  getCurrentUser() {
     try {
-      const refreshToken = this.getRefreshToken();
-      if (!refreshToken) return false;
+      const userData = localStorage.getItem('currentUser');
+      return userData ? JSON.parse(userData) : null;
+    } catch {
+      return null;
+    }
+  }
 
-      const response = await fetch(
-        `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.refresh}`,
-        {
-          method: 'POST',
-          headers: this.defaultHeaders,
-          body: JSON.stringify({ refreshToken })
-        }
-      );
+  /**
+   * Check if user is authenticated
+   */
+  isAuthenticated() {
+    const token = this.getAuthToken();
+    if (!token) return false;
+    
+    try {
+      // Basic JWT structure validation
+      const parts = token.split('.');
+      if (parts.length !== 3) return false;
+      
+      const payload = JSON.parse(atob(parts[1]));
+      return payload.exp > Date.now() / 1000;
+    } catch {
+      return false;
+    }
+  }
 
-      if (response.ok) {
-        const data = await response.json();
-        this.setTokens(data.accessToken, data.refreshToken);
-        return true;
+  /**
+   * Logout and clear authentication
+   */
+  async logoutAgenceService() {
+    try {
+      // Call logout endpoint if authenticated
+      if (this.isAuthenticated()) {
+        await this.makeRequest('POST', this.config.agenceService.endpoints.logout);
       }
     } catch (error) {
-      console.error('Token refresh failed:', error);
+      console.warn('Logout API call failed:', error);
+    } finally {
+      // Clear authentication data
+      this.currentToken = null;
+      this.currentUser = null;
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('currentUser');
+      localStorage.removeItem('loginTimestamp');
+      delete window.authToken;
+      
+      // Redirect to login
+      window.location.reload();
+    }
+  }
+
+  // =====================================
+  // HTTP REQUEST UTILITIES
+  // =====================================
+
+  /**
+   * Get default headers for requests
+   */
+  getDefaultHeaders(includeAuth = true) {
+    const headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    };
+
+    // Add authentication header if available
+    if (includeAuth) {
+      const token = this.getAuthToken();
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
     }
 
-    return false;
+    return headers;
+  }
+
+  /**
+   * Make HTTP request with error handling and authentication
+   */
+  async makeRequest(method, url, options = {}) {
+    const {
+      body,
+      headers = {},
+      includeAuth = true,
+      service = 'agenceService',
+      ...otherOptions
+    } = options;
+
+    const baseUrl = this.config[service].baseUrl;
+    const fullUrl = `${baseUrl}${url}`;
+
+    const requestConfig = {
+      method,
+      headers: {
+        ...this.getDefaultHeaders(includeAuth),
+        ...headers
+      },
+      ...otherOptions
+    };
+
+    // Add body for non-GET requests
+    if (body && method !== 'GET') {
+      requestConfig.body = typeof body === 'string' ? body : JSON.stringify(body);
+    }
+
+    try {
+      console.log(`🌐 ${method} ${fullUrl}`);
+      
+      const response = await fetch(fullUrl, requestConfig);
+      
+      // Handle authentication errors
+      if (response.status === 401) {
+        console.warn('🔒 Authentication failed - redirecting to login');
+        this.logoutAgenceService();
+        throw new Error('Session expirée. Veuillez vous reconnecter.');
+      }
+
+      if (response.status === 403) {
+        throw new Error('Accès refusé. Permissions insuffisantes.');
+      }
+
+      // Handle other errors
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `Erreur ${response.status}: ${response.statusText}`);
+      }
+
+      // Parse response
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const data = await response.json();
+        console.log(`✅ ${method} ${fullUrl} - Success`);
+        return data;
+      } else {
+        console.log(`✅ ${method} ${fullUrl} - Success (no JSON content)`);
+        return response;
+      }
+
+    } catch (error) {
+      console.error(`❌ ${method} ${fullUrl} - Error:`, error);
+      throw error;
+    }
   }
 
   // =====================================
-  // USER SERVICE INTEGRATION
+  // AGENCE SERVICE API METHODS
   // =====================================
 
   /**
-   * User authentication
-   */
-  async loginUser(credentials) {
-    const url = `${this.config.userService.baseUrl}${this.config.userService.endpoints.login}`;
-    return this.makeRequest(url, {
-      method: 'POST',
-      body: JSON.stringify(credentials)
-    });
-  }
-
-  /**
-   * User registration
-   */
-  async registerUser(userData) {
-    const url = `${this.config.userService.baseUrl}${this.config.userService.endpoints.register}`;
-    return this.makeRequest(url, {
-      method: 'POST',
-      body: JSON.stringify(userData)
-    });
-  }
-
-  /**
-   * Check registration status
-   */
-  async checkRegistrationStatus(email) {
-    const url = `${this.config.userService.baseUrl}${this.config.userService.endpoints.registrationStatus}?email=${encodeURIComponent(email)}`;
-    return this.makeRequest(url);
-  }
-
-  /**
-   * Get user profile
-   */
-  async getUserProfile() {
-    const url = `${this.config.userService.baseUrl}${this.config.userService.endpoints.profile}`;
-    return this.makeRequest(url);
-  }
-
-  /**
-   * Search clients (Admin only)
-   */
-  async searchClients(searchTerm, page = 0, size = 20) {
-    const params = new URLSearchParams({
-      searchTerm,
-      page: page.toString(),
-      size: size.toString()
-    });
-    const url = `${this.config.userService.baseUrl}${this.config.userService.endpoints.search}?${params}`;
-    return this.makeRequest(url);
-  }
-
-  /**
-   * Get user service statistics (Admin only)
-   */
-  async getUserServiceStatistics() {
-    const url = `${this.config.userService.baseUrl}${this.config.userService.endpoints.statistics}`;
-    return this.makeRequest(url);
-  }
-
-  /**
-   * Unlock user account (Admin only)
-   */
-  async unlockUserAccount(clientId) {
-    const url = `${this.config.userService.baseUrl}${this.config.userService.endpoints.unlock(clientId)}`;
-    return this.makeRequest(url, { method: 'POST' });
-  }
-
-  /**
-   * Financial operations
-   */
-  async makeDeposit(depositData) {
-    const url = `${this.config.userService.baseUrl}${this.config.userService.endpoints.deposit}`;
-    return this.makeRequest(url, {
-      method: 'POST',
-      body: JSON.stringify(depositData)
-    });
-  }
-
-  async makeWithdrawal(withdrawalData) {
-    const url = `${this.config.userService.baseUrl}${this.config.userService.endpoints.withdrawal}`;
-    return this.makeRequest(url, {
-      method: 'POST',
-      body: JSON.stringify(withdrawalData)
-    });
-  }
-
-  async makeTransfer(transferData) {
-    const url = `${this.config.userService.baseUrl}${this.config.userService.endpoints.transfer}`;
-    return this.makeRequest(url, {
-      method: 'POST',
-      body: JSON.stringify(transferData)
-    });
-  }
-
-  // =====================================
-  // AGENCE SERVICE - ADMIN DASHBOARD
-  // =====================================
-
-  /**
-   * Get admin dashboard overview
+   * Get admin dashboard data
    */
   async getAdminDashboard() {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.dashboard}`;
-    return this.makeRequest(url);
+    return this.makeRequest('GET', this.config.agenceService.endpoints.dashboard);
   }
 
   /**
-   * Get system health status
+   * Get dashboard health status
    */
-  async getSystemHealth() {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.dashboardHealth}`;
-    return this.makeRequest(url);
+  async getDashboardHealth() {
+    return this.makeRequest('GET', this.config.agenceService.endpoints.dashboardHealth);
   }
 
   /**
-   * Get recent system activity
+   * Get recent activity
    */
   async getRecentActivity() {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.recentActivity}`;
-    return this.makeRequest(url);
+    return this.makeRequest('GET', this.config.agenceService.endpoints.recentActivity);
   }
 
-  // =====================================
-  // AGENCE SERVICE - USER MANAGEMENT
-  // =====================================
-
   /**
-   * Get users list with pagination and filters
+   * Get admin users with pagination and filters
    */
-  async getUsers(page = 0, size = 20, status = null, search = null) {
-    const params = new URLSearchParams({
-      page: page.toString(),
-      size: size.toString(),
-      sort: 'createdAt,desc'
-    });
+  async getAdminUsers(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    const endpoint = queryString 
+      ? `${this.config.agenceService.endpoints.adminUsers}?${queryString}`
+      : this.config.agenceService.endpoints.adminUsers;
     
-    if (status && status !== 'ALL') params.append('status', status);
-    if (search) params.append('search', search);
-
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.adminUsers}?${params}`;
-    return this.makeRequest(url);
-  }
-
-  /**
-   * Get user details
-   */
-  async getUserDetails(userId) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.adminUserDetails(userId)}`;
-    return this.makeRequest(url);
-  }
-
-  /**
-   * Create new user
-   */
-  async createUser(userData) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.adminCreateUser}`;
-    return this.makeRequest(url, {
-      method: 'POST',
-      body: JSON.stringify(userData)
-    });
-  }
-
-  /**
-   * Update user
-   */
-  async updateUser(userId, userData) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.adminUpdateUser(userId)}`;
-    return this.makeRequest(url, {
-      method: 'PUT',
-      body: JSON.stringify(userData)
-    });
+    return this.makeRequest('GET', endpoint);
   }
 
   /**
    * Get user statistics
    */
   async getAgenceUserStatistics() {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.adminUserStatistics}`;
-    return this.makeRequest(url);
+    return this.makeRequest('GET', this.config.agenceService.endpoints.adminUserStatistics);
+  }
+
+  /**
+   * Create new user
+   */
+  async createAgenceUser(userData) {
+    return this.makeRequest('POST', this.config.agenceService.endpoints.adminUserCreate, {
+      body: userData
+    });
+  }
+
+  /**
+   * Update user
+   */
+  async updateAgenceUser(userId, userData) {
+    return this.makeRequest('PUT', this.config.agenceService.endpoints.adminUserUpdate(userId), {
+      body: userData
+    });
   }
 
   /**
    * Block user
    */
-  async blockUser(userId, reason) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.adminBlockUser(userId)}`;
-    return this.makeRequest(url, {
-      method: 'POST',
-      body: JSON.stringify({ reason })
-    });
+  async blockAgenceUser(userId) {
+    return this.makeRequest('POST', this.config.agenceService.endpoints.adminUserBlock(userId));
   }
 
   /**
    * Unblock user
    */
-  async unblockUser(userId) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.adminUnblockUser(userId)}`;
-    return this.makeRequest(url, { method: 'POST' });
+  async unblockAgenceUser(userId) {
+    return this.makeRequest('POST', this.config.agenceService.endpoints.adminUserUnblock(userId));
   }
 
-  // =====================================
-  // AGENCE SERVICE - DOCUMENT APPROVAL
-  // =====================================
-
   /**
-   * Get pending documents for approval
+   * Get pending documents
    */
-  async getPendingDocuments(page = 0, size = 20, agence = null) {
-    const params = new URLSearchParams({
-      page: page.toString(),
-      size: size.toString(),
-      sort: 'uploadedAt,desc'
-    });
+  async getPendingDocuments(params = {}) {
+    const queryString = new URLSearchParams(params).toString();
+    const endpoint = queryString 
+      ? `${this.config.agenceService.endpoints.pendingDocuments}?${queryString}`
+      : this.config.agenceService.endpoints.pendingDocuments;
     
-    if (agence) params.append('agence', agence);
-
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.pendingDocuments}?${params}`;
-    return this.makeRequest(url);
+    return this.makeRequest('GET', endpoint);
   }
 
   /**
-   * Get document for review
+   * Get document statistics
    */
-  async getDocumentForReview(documentId) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.documentReview(documentId)}`;
-    return this.makeRequest(url);
+  async getDocumentStatistics() {
+    return this.makeRequest('GET', this.config.agenceService.endpoints.documentStatistics);
   }
 
   /**
    * Approve document
    */
-  async approveDocument(documentId, approvalData) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.approveDocument(documentId)}`;
-    return this.makeRequest(url, {
-      method: 'POST',
-      body: JSON.stringify(approvalData)
+  async approveDocument(documentId, comment = '') {
+    return this.makeRequest('POST', this.config.agenceService.endpoints.documentApprove(documentId), {
+      body: { comment }
     });
   }
 
   /**
    * Reject document
    */
-  async rejectDocument(documentId, rejectionData) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.rejectDocument(documentId)}`;
-    return this.makeRequest(url, {
-      method: 'POST',
-      body: JSON.stringify(rejectionData)
+  async rejectDocument(documentId, reason = '') {
+    return this.makeRequest('POST', this.config.agenceService.endpoints.documentReject(documentId), {
+      body: { reason }
     });
-  }
-
-  /**
-   * Get document approval statistics
-   */
-  async getDocumentStatistics() {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.documentStatistics}`;
-    return this.makeRequest(url);
   }
 
   /**
    * Bulk approve documents
    */
-  async bulkApproveDocuments(documentIds, approvalData) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.bulkApproveDocuments}`;
-    return this.makeRequest(url, {
-      method: 'POST',
-      body: JSON.stringify({ documentIds, ...approvalData })
+  async bulkApproveDocuments(documentIds, comment = '') {
+    return this.makeRequest('POST', this.config.agenceService.endpoints.bulkApprove, {
+      body: { documentIds, comment }
     });
   }
 
   /**
    * Bulk reject documents
    */
-  async bulkRejectDocuments(documentIds, rejectionData) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.bulkRejectDocuments}`;
-    return this.makeRequest(url, {
-      method: 'POST',
-      body: JSON.stringify({ documentIds, ...rejectionData })
+  async bulkRejectDocuments(documentIds, reason = '') {
+    return this.makeRequest('POST', this.config.agenceService.endpoints.bulkReject, {
+      body: { documentIds, reason }
     });
   }
 
   // =====================================
-  // AGENCE SERVICE - ACCOUNT MANAGEMENT
+  // USER SERVICE API METHODS
   // =====================================
 
   /**
-   * Get agency accounts
+   * Search users in UserService
    */
-  async getAgencyAccounts(idAgence, limit = 50) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.agenceAccounts(idAgence)}?limit=${limit}`;
-    return this.makeRequest(url);
-  }
-
-  /**
-   * Find account by number
-   */
-  async findAccount(numeroCompte) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.findAccount(numeroCompte)}`;
-    return this.makeRequest(url);
-  }
-
-  /**
-   * Get account balance
-   */
-  async getAccountBalance(numeroCompte) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.accountBalance(numeroCompte)}`;
-    return this.makeRequest(url);
-  }
-
-  /**
-   * Get account transaction history
-   */
-  async getAccountHistory(numeroCompte, limit = 20) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.accountHistory(numeroCompte)}?limit=${limit}`;
-    return this.makeRequest(url);
-  }
-
-  /**
-   * Search accounts with filters
-   */
-  async searchAccounts(idAgence, filters = {}) {
-    const params = new URLSearchParams();
-    Object.entries(filters).forEach(([key, value]) => {
-      if (value) params.append(key, value);
-    });
-
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.searchAccounts(idAgence)}?${params}`;
-    return this.makeRequest(url);
-  }
-
-  /**
-   * Activate account
-   */
-  async activateAccount(numeroCompte, activatedBy) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.activateAccount(numeroCompte)}`;
-    return this.makeRequest(url, {
-      method: 'PUT',
-      body: JSON.stringify({ activatedBy })
-    });
-  }
-
-  /**
-   * Suspend account
-   */
-  async suspendAccount(numeroCompte, reason, suspendedBy) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.suspendAccount(numeroCompte)}`;
-    return this.makeRequest(url, {
-      method: 'PUT',
-      body: JSON.stringify({ reason, suspendedBy })
-    });
-  }
-
-  // =====================================
-  // AGENCE SERVICE - TRANSACTIONS
-  // =====================================
-
-  /**
-   * Process transaction
-   */
-  async processTransaction(transactionData) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.processTransaction}`;
-    return this.makeRequest(url, {
-      method: 'POST',
-      body: JSON.stringify(transactionData)
-    });
-  }
-
-  /**
-   * Estimate transaction fees
-   */
-  async estimateTransactionFees(transactionData) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.estimateTransactionFees}`;
-    return this.makeRequest(url, {
-      method: 'POST',
-      body: JSON.stringify(transactionData)
-    });
-  }
-
-  // =====================================
-  // AGENCE SERVICE - KYC MANAGEMENT
-  // =====================================
-
-  /**
-   * Validate KYC documents
-   */
-  async validateKYC(kycData) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.validateKYC}`;
-    return this.makeRequest(url, {
-      method: 'POST',
-      body: JSON.stringify(kycData)
-    });
-  }
-
-  /**
-   * Generate KYC report
-   */
-  async generateKYCReport(idClient) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.kycReport(idClient)}`;
-    return this.makeRequest(url);
-  }
-
-  // =====================================
-  // AGENCE SERVICE - STATISTICS & INFO
-  // =====================================
-
-  /**
-   * Get agency statistics
-   */
-  async getAgencyStatistics(idAgence) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.agenceStatistics(idAgence)}`;
-    return this.makeRequest(url);
-  }
-
-  /**
-   * Get agency information
-   */
-  async getAgencyInfo(idAgence) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.agenceInfo(idAgence)}`;
-    return this.makeRequest(url);
-  }
-
-  /**
-   * Get fees configuration
-   */
-  async getFeesConfiguration() {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.fraisConfiguration}`;
-    return this.makeRequest(url);
-  }
-
-  // =====================================
-  // AUTHENTICATION FOR AGENCE SERVICE
-  // =====================================
-
-  /**
-   * Login to AgenceService
-   */
-  async loginAgenceService(credentials) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.login}`;
-    return this.makeRequest(url, {
-      method: 'POST',
-      body: JSON.stringify(credentials),
-      headers: this.defaultHeaders // Don't include auth headers for login
-    });
-  }
-
-  /**
-   * Logout from AgenceService
-   */
-  async logoutAgenceService() {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.logout}`;
-    const result = await this.makeRequest(url, { method: 'POST' });
+  async searchUsers(searchTerm, params = {}) {
+    const allParams = { searchTerm, ...params };
+    const queryString = new URLSearchParams(allParams).toString();
+    const endpoint = `${this.config.userService.endpoints.search}?${queryString}`;
     
-    if (result.success) {
-      this.clearTokens();
-    }
-    
-    return result;
+    return this.makeRequest('GET', endpoint, { service: 'userService' });
   }
 
   /**
-   * Change password in AgenceService
+   * Get user statistics from UserService
    */
-  async changePassword(passwordData) {
-    const url = `${this.config.agenceService.baseUrl}${this.config.agenceService.endpoints.changePassword}`;
-    return this.makeRequest(url, {
-      method: 'POST',
-      body: JSON.stringify(passwordData)
+  async getUserStatistics() {
+    return this.makeRequest('GET', this.config.userService.endpoints.statistics, { 
+      service: 'userService' 
+    });
+  }
+
+  /**
+   * Unlock user in UserService
+   */
+  async unlockUser(clientId) {
+    return this.makeRequest('POST', this.config.userService.endpoints.unlock(clientId), { 
+      service: 'userService' 
     });
   }
 
@@ -763,44 +446,55 @@ class ApiService {
   // =====================================
 
   /**
-   * Check if user is authenticated
+   * Test API connectivity
    */
-  isAuthenticated() {
-    return !!this.getAuthToken();
-  }
-
-  /**
-   * Get current user role from token (if implemented)
-   */
-  getUserRole() {
-    const token = this.getAuthToken();
-    if (!token) return null;
-
-    try {
-      // Decode JWT token to get user role
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      return payload.roles || payload.role || null;
-    } catch (error) {
-      console.error('Error decoding token:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Format API errors for display
-   */
-  formatError(error) {
-    const errorMessages = {
-      'UNAUTHORIZED': 'Session expirée. Veuillez vous reconnecter.',
-      'FORBIDDEN': 'Accès non autorisé.',
-      'NOT_FOUND': 'Ressource introuvable.',
-      'SERVER_ERROR': 'Erreur serveur. Veuillez réessayer plus tard.',
-      'Network Error': 'Erreur de connexion. Vérifiez votre connexion internet.'
+  async testConnectivity() {
+    const results = {
+      agenceService: false,
+      userService: false
     };
 
-    return errorMessages[error] || error || 'Une erreur inattendue s\'est produite.';
+    try {
+      await this.getDashboardHealth();
+      results.agenceService = true;
+    } catch (error) {
+      console.warn('AgenceService connectivity test failed:', error);
+    }
+
+    try {
+      await this.getUserStatistics();
+      results.userService = true;
+    } catch (error) {
+      console.warn('UserService connectivity test failed:', error);
+    }
+
+    return results;
+  }
+
+  /**
+   * Retry failed requests
+   */
+  async withRetry(requestFn, maxRetries = 3, delay = 1000) {
+    let lastError;
+    
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        return await requestFn();
+      } catch (error) {
+        lastError = error;
+        
+        if (i < maxRetries - 1) {
+          console.log(`Retry attempt ${i + 1}/${maxRetries} after ${delay}ms`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          delay *= 2; // Exponential backoff
+        }
+      }
+    }
+    
+    throw lastError;
   }
 }
 
-// Export singleton instance
-export default new ApiService();
+// Create and export singleton instance
+const apiService = new ApiService();
+export default apiService;
