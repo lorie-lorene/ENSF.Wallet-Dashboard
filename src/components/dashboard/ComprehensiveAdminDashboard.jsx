@@ -111,113 +111,329 @@ const ComprehensiveAdminDashboard = () => {
   // API INTEGRATION FUNCTIONS
   // =====================================
 
+
+  // =====================================
+  // COMPUTED VALUES
+  // =====================================
   /**
-   * Improved initialization with better error handling
-   */
-  const initializeDashboard = useCallback(async () => {
+ * Enhanced initializeDashboard function with real client data integration
+ */
+const initializeDashboard = useCallback(async () => {
+  try {
+    console.log('🚀 Starting dashboard initialization with REAL data...');
     setLoading(prev => ({ ...prev, dashboard: true }));
+    setErrors(prev => ({ ...prev, dashboard: null }));
+
+    // Execute all data fetching operations
+    const results = await Promise.allSettled([
+      fetchUserServiceData(),           // Now fetches REAL client data
+      fetchAgenceServiceDashboard(),    // AgenceService admin data
+      fetchSystemHealth(),              // System health check
+      fetchPendingDocuments(),          // Real pending documents
+      fetchRecentActivity(),            // Recent system activity
+      fetchRealClientData(0, 10)        // First 10 real clients for overview
+    ]);
+
+    // Log results for debugging
+    const functionNames = [
+      'fetchUserServiceData (REAL)', 
+      'fetchAgenceServiceDashboard', 
+      'fetchSystemHealth', 
+      'fetchPendingDocuments', 
+      'fetchRecentActivity',
+      'fetchRealClientData'
+    ];
     
-    try {
-      console.log('🚀 Starting dashboard initialization...');
-      
-      // Use Promise.allSettled to ensure all promises complete regardless of individual failures
-      const results = await Promise.allSettled([
-        fetchUserServiceData(),
-        fetchAgenceServiceDashboard(),
-        fetchSystemHealth(),
-        fetchPendingDocuments(),
-        fetchRecentActivity()
-      ]);
-      
-      // Log results for debugging
-      results.forEach((result, index) => {
-        const functionNames = ['fetchUserServiceData', 'fetchAgenceServiceDashboard', 'fetchSystemHealth', 'fetchPendingDocuments', 'fetchRecentActivity'];
-        if (result.status === 'rejected') {
-          console.error(`❌ ${functionNames[index]} failed:`, result.reason);
-        } else {
-          console.log(`✅ ${functionNames[index]} completed`);
-        }
-      });
-      
-      console.log('✅ Dashboard initialization completed');
-      
-    } catch (error) {
-      console.error('❌ Dashboard initialization error:', error);
-      setErrors(prev => ({ ...prev, dashboard: safeFormatError(error) }));
-    } finally {
-      setLoading(prev => ({ ...prev, dashboard: false }));
-    }
-  }, []);
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        console.error(`❌ ${functionNames[index]} failed:`, result.reason);
+      } else {
+        console.log(`✅ ${functionNames[index]} completed`);
+      }
+    });
+
+    console.log('✅ Dashboard initialization completed with REAL data integration');
+
+  } catch (error) {
+    console.error('❌ Dashboard initialization error:', error);
+    setErrors(prev => ({ ...prev, dashboard: safeFormatError(error) }));
+  } finally {
+    setLoading(prev => ({ ...prev, dashboard: false }));
+  }
+}, []);
+
+/**
+ * Update the combinedStatistics computation to use real data
+ */
+const combinedStatistics = useMemo(() => {
+  const userStats = dashboardData.userService.statistics;
+  const agenceStats = dashboardData.agenceService.dashboard?.userStatistics;
+  const documentsStats = dashboardData.agenceService.documents;
+  
+  if (!userStats && !agenceStats) return null;
+
+  // Check if we have real data from UserService
+  const isRealData = userStats?.source === 'UserService';
+  
+  return {
+    // Client statistics (REAL data from UserService)
+    totalClients: userStats?.totalClients || 0,
+    activeClients: userStats?.activeClients || 0,
+    pendingClients: userStats?.pendingClients || 0,
+    blockedClients: userStats?.blockedClients || 0,
+    rejectedClients: userStats?.rejectedClients || 0,
+    newClientsToday: userStats?.newClientsToday || 0,
+    newClientsThisWeek: userStats?.newClientsThisWeek || 0,
+    newClientsThisMonth: userStats?.newClientsThisMonth || 0,
+    
+    // System users (AgenceService data)
+    totalUsers: agenceStats?.totalUsers || 0,
+    activeUsers: agenceStats?.activeUsers || 0,
+    pendingUsers: agenceStats?.pendingUsers || 0,
+    blockedUsers: agenceStats?.blockedUsers || 0,
+    
+    // Documents
+    pendingDocuments: documentsStats?.totalElements || 0,
+    
+    // Health
+    systemHealth: dashboardData.agenceService.health?.status || 'UNKNOWN',
+    
+    // Data source information
+    dataSource: {
+      clients: userStats?.source || 'Unknown',
+      isRealData: isRealData,
+      lastUpdated: userStats?.generatedAt || new Date().toISOString()
+    },
+    
+    // Additional real data metrics
+    clientsWithAccounts: userStats?.clientsWithAccounts || 0,
+    clientsWithTransactions: userStats?.clientsWithTransactions || 0,
+    totalAccountBalance: userStats?.totalAccountBalance || 0,
+    
+    // Agency distribution from real data
+    agencyDistribution: userStats?.agencyDistribution || {},
+    statusDistribution: userStats?.statusDistribution || {},
+    registrationTrends: userStats?.registrationTrends || {}
+  };
+}, [dashboardData]);
+
+/**
+ * Enhanced chart data computation with real client data
+ */
+const chartData = useMemo(() => {
+  if (!combinedStatistics) return [];
+
+  // Use real status distribution if available
+  if (combinedStatistics.statusDistribution && Object.keys(combinedStatistics.statusDistribution).length > 0) {
+    return Object.entries(combinedStatistics.statusDistribution).map(([status, count]) => ({
+      name: getStatusDisplayName(status),
+      value: count,
+      color: getStatusColor(status)
+    }));
+  }
+
+  // Fallback to basic distribution
+  return [
+    { name: 'Clients Actifs', value: combinedStatistics.activeClients, color: '#10B981' },
+    { name: 'En Attente', value: combinedStatistics.pendingClients, color: '#F59E0B' },
+    { name: 'Bloqués', value: combinedStatistics.blockedClients, color: '#EF4444' },
+    { name: 'Rejetés', value: combinedStatistics.rejectedClients || 0, color: '#6B7280' }
+  ].filter(item => item.value > 0); // Only show non-zero values
+}, [combinedStatistics]);
+
+/**
+ * Helper functions for status display
+ */
+const getStatusDisplayName = (status) => {
+  const statusMap = {
+    'ACTIVE': 'Clients Actifs',
+    'PENDING': 'En Attente',
+    'BLOCKED': 'Bloqués',
+    'REJECTED': 'Rejetés'
+  };
+  return statusMap[status] || status;
+};
+
+const getStatusColor = (status) => {
+  const colorMap = {
+    'ACTIVE': '#10B981',
+    'PENDING': '#F59E0B',
+    'BLOCKED': '#EF4444',
+    'REJECTED': '#6B7280'
+  };
+  return colorMap[status] || '#6B7280';
+};
 
   /**
-   * Fetch UserService statistics with robust error handling
-   */
-  const fetchUserServiceData = async () => {
-    try {
-      setLoading(prev => ({ ...prev, statistics: true }));
+ * Fetch UserService statistics with REAL client data integration
+ */
+const fetchUserServiceData = async () => {
+  try {
+    console.log('📊 Fetching REAL UserService data...');
+    setLoading(prev => ({ ...prev, statistics: true }));
+    
+    // Try to fetch real client statistics from UserService
+    const clientStatsResponse = await ApiService.getClientStatistics();
+    
+    if (clientStatsResponse && clientStatsResponse.success && clientStatsResponse.data) {
+      console.log('✅ Successfully fetched REAL client statistics from UserService');
       
-      // Check if the method exists before calling
-      if (!ApiService || typeof ApiService.getUserServiceStatistics !== 'function') {
-        console.warn('⚠️ ApiService.getUserServiceStatistics not available, using fallback');
-        
-        // Set fallback data directly
-        setDashboardData(prev => ({
-          ...prev,
-          userService: {
-            ...prev.userService,
-            statistics: {
-              totalClients: 1250,
-              activeClients: 980,
-              pendingClients: 150,
-              blockedClients: 20,
-              newClientsToday: 15,
-              generatedAt: new Date().toISOString()
-            }
-          }
-        }));
-        setErrors(prev => ({ ...prev, userStats: null }));
-        return;
-      }
-      
-      // Call the API method safely
-      const statsResponse = await ApiService.getUserServiceStatistics();
-      
-      if (statsResponse && statsResponse.success && statsResponse.data) {
-        setDashboardData(prev => ({
-          ...prev,
-          userService: {
-            ...prev.userService,
-            statistics: statsResponse.data
-          }
-        }));
-        setErrors(prev => ({ ...prev, userStats: null }));
-      } else {
-        throw new Error(statsResponse?.error || 'Invalid response from UserService');
-      }
-      
-    } catch (error) {
-      console.error('UserService data fetch error:', error);
-      setErrors(prev => ({ ...prev, userStats: safeFormatError(error) }));
-      
-      // Always provide fallback data to keep UI functional
+      // Set the real client data
       setDashboardData(prev => ({
         ...prev,
         userService: {
           ...prev.userService,
           statistics: {
-            totalClients: 1250,
-            activeClients: 980,
-            pendingClients: 150,
-            blockedClients: 20,
-            newClientsToday: 15,
-            generatedAt: new Date().toISOString()
+            totalClients: clientStatsResponse.data.totalClients || 0,
+            activeClients: clientStatsResponse.data.activeClients || 0,
+            pendingClients: clientStatsResponse.data.pendingClients || 0,
+            blockedClients: clientStatsResponse.data.blockedClients || 0,
+            rejectedClients: clientStatsResponse.data.rejectedClients || 0,
+            newClientsToday: clientStatsResponse.data.newClientsToday || 0,
+            newClientsThisWeek: clientStatsResponse.data.newClientsThisWeek || 0,
+            newClientsThisMonth: clientStatsResponse.data.newClientsThisMonth || 0,
+            generatedAt: clientStatsResponse.data.generatedAt || new Date().toISOString(),
+            source: 'UserService', // Mark as real data
+            statusDistribution: clientStatsResponse.data.statusDistribution || {},
+            agencyDistribution: clientStatsResponse.data.agencyDistribution || {},
+            registrationTrends: clientStatsResponse.data.registrationTrends || {},
+            clientsWithAccounts: clientStatsResponse.data.clientsWithAccounts || 0,
+            clientsWithTransactions: clientStatsResponse.data.clientsWithTransactions || 0,
+            totalAccountBalance: clientStatsResponse.data.totalAccountBalance || 0
           }
         }
       }));
-    } finally {
-      setLoading(prev => ({ ...prev, statistics: false }));
+      
+      setErrors(prev => ({ ...prev, userStats: null }));
+      return;
     }
-  };
+    
+    // If UserService is not available, try the legacy endpoint
+    console.log('⚠️ UserService not available, trying legacy endpoint...');
+    const legacyResponse = await ApiService.getUserServiceStatistics();
+    
+    if (legacyResponse && legacyResponse.success && legacyResponse.data) {
+      console.log('📊 Using legacy UserService statistics');
+      
+      setDashboardData(prev => ({
+        ...prev,
+        userService: {
+          ...prev.userService,
+          statistics: {
+            ...legacyResponse.data,
+            source: 'Legacy', // Mark as legacy data
+          }
+        }
+      }));
+      
+      setErrors(prev => ({ ...prev, userStats: null }));
+      return;
+    }
+    
+    // Final fallback
+    console.log('📊 Using fallback client statistics');
+    setDashboardData(prev => ({
+      ...prev,
+      userService: {
+        ...prev.userService,
+        statistics: {
+          totalClients: 1250,
+          activeClients: 980,
+          pendingClients: 150,
+          blockedClients: 20,
+          newClientsToday: 15,
+          generatedAt: new Date().toISOString(),
+          source: 'Fallback', // Mark as fallback data
+          note: 'Données de démonstration - UserService non configuré'
+        }
+      }
+    }));
+    
+    setErrors(prev => ({ 
+      ...prev, 
+      userStats: 'UserService non disponible - Données de démonstration affichées' 
+    }));
+    
+  } catch (error) {
+    console.error('❌ UserService data fetch error:', error);
+    
+    const errorMessage = safeFormatError(error.message || error);
+    setErrors(prev => ({ ...prev, userStats: errorMessage }));
+    
+    // Set fallback data on error
+    setDashboardData(prev => ({
+      ...prev,
+      userService: {
+        ...prev.userService,
+        statistics: {
+          totalClients: 0,
+          activeClients: 0,
+          pendingClients: 0,
+          blockedClients: 0,
+          newClientsToday: 0,
+          generatedAt: new Date().toISOString(),
+          source: 'Error',
+          error: errorMessage
+        }
+      }
+    }));
+    
+  } finally {
+    setLoading(prev => ({ ...prev, statistics: false }));
+  }
+};
+
+/**
+ * Add a new function to fetch real client list data
+ * This can be used in the Users Management tab to show real clients
+ */
+const fetchRealClientData = async (page = 0, size = 20, status = null, search = null) => {
+  try {
+    console.log('👥 Fetching real client data from UserService...');
+    setLoading(prev => ({ ...prev, clients: true }));
+    
+    const response = await ApiService.getAllClients(page, size, status, search);
+    
+    if (response && response.success && response.data) {
+      console.log('✅ Successfully fetched real client data');
+      
+      // Store real client data in dashboard state
+      setDashboardData(prev => ({
+        ...prev,
+        userService: {
+          ...prev.userService,
+          clients: response.data
+        }
+      }));
+      
+      setErrors(prev => ({ ...prev, clients: null }));
+    } else {
+      throw new Error(response?.error || 'Failed to fetch client data');
+    }
+    
+  } catch (error) {
+    console.error('❌ Real client data fetch error:', error);
+    setErrors(prev => ({ ...prev, clients: safeFormatError(error.message || error) }));
+    
+    // Set empty fallback data
+    setDashboardData(prev => ({
+      ...prev,
+      userService: {
+        ...prev.userService,
+        clients: {
+          content: [],
+          totalElements: 0,
+          totalPages: 0,
+          size: size,
+          number: page
+        }
+      }
+    }));
+    
+  } finally {
+    setLoading(prev => ({ ...prev, clients: false }));
+  }
+};
 
   /**
    * Fetch AgenceService dashboard with improved error handling
@@ -407,12 +623,28 @@ const ComprehensiveAdminDashboard = () => {
   /**
    * Fetch users with pagination and filters
    */
-  const fetchUsers = async (page = 0, size = 20, status = null, search = null) => {
+    const fetchUsers = async (page = 0, size = 20, status = null, search = null) => {
     try {
+      console.log('👥 Fetching users:', { page, size, status, search });
       setLoading(prev => ({ ...prev, users: true }));
       
-      const response = await ApiService.getUsers(page, size, status, search);
-      if (response.success) {
+      // Check if getUsers method exists, otherwise use getAdminUsers
+      let response;
+      
+      if (typeof ApiService.getUsers === 'function') {
+        response = await ApiService.getUsers(page, size, status, search);
+      } else if (typeof ApiService.getAdminUsers === 'function') {
+        // Fallback to getAdminUsers with proper parameter formatting
+        const params = { page, size };
+        if (status && status !== 'ALL') params.status = status;
+        if (search && search.trim()) params.search = search.trim();
+        
+        response = await ApiService.getAdminUsers(params);
+      } else {
+        throw new Error('No user fetch method available in ApiService');
+      }
+      
+      if (response && response.success && response.data) {
         setDashboardData(prev => ({
           ...prev,
           agenceService: {
@@ -422,13 +654,65 @@ const ComprehensiveAdminDashboard = () => {
         }));
         setErrors(prev => ({ ...prev, users: null }));
       } else {
-        throw new Error(response.error);
+        throw new Error(response?.error || 'Réponse invalide du serveur');
       }
+      
     } catch (error) {
       console.error('Users fetch error:', error);
-      setErrors(prev => ({ ...prev, users: ApiService.formatError(error.message) }));
+      
+      // Safe error formatting
+      const errorMessage = safeFormatError(error.message || error);
+      setErrors(prev => ({ ...prev, users: errorMessage }));
+      
+      // Set fallback empty data to prevent rendering errors
+      setDashboardData(prev => ({
+        ...prev,
+        agenceService: {
+          ...prev.agenceService,
+          users: {
+            content: [],
+            totalElements: 0,
+            totalPages: 0,
+            size: size,
+            number: page
+          }
+        }
+      }));
+      
     } finally {
       setLoading(prev => ({ ...prev, users: false }));
+    }
+  };
+
+  /**
+   * Enhanced safe error formatter with better fallback handling
+   */
+  const safeFormatError = (error) => {
+    try {
+      // Try to use ApiService.formatError if it exists
+      if (ApiService && typeof ApiService.formatError === 'function') {
+        return ApiService.formatError(error);
+      }
+      
+      // Fallback error formatting
+      if (!error) return 'Une erreur inconnue s\'est produite';
+      
+      if (typeof error === 'string') return error;
+      
+      if (error.message) return error.message;
+      
+      if (error.error) return error.error;
+      
+      // Handle specific error types
+      if (error.name === 'TypeError' && error.message.includes('is not a function')) {
+        return 'Méthode d\'API non disponible. Veuillez vérifier la configuration.';
+      }
+      
+      return 'Une erreur s\'est produite lors de l\'opération';
+      
+    } catch (formatError) {
+      console.error('❌ Error in safeFormatError:', formatError);
+      return 'Erreur de formatage des erreurs';
     }
   };
 
@@ -508,49 +792,6 @@ const ComprehensiveAdminDashboard = () => {
       return { success: false, error: ApiService.formatError(error.message) };
     }
   };
-
-  // =====================================
-  // COMPUTED VALUES
-  // =====================================
-
-  const combinedStatistics = useMemo(() => {
-    const userStats = dashboardData.userService.statistics;
-    const agenceStats = dashboardData.agenceService.dashboard?.userStatistics;
-    const documentsStats = dashboardData.agenceService.documents;
-    
-    if (!userStats && !agenceStats) return null;
-
-    return {
-      // User statistics
-      totalClients: userStats?.totalClients || 0,
-      activeClients: userStats?.activeClients || 0,
-      pendingClients: userStats?.pendingClients || 0,
-      blockedClients: userStats?.blockedClients || 0,
-      newClientsToday: userStats?.newClientsToday || 0,
-      
-      // System users
-      totalUsers: agenceStats?.totalUsers || 0,
-      activeUsers: agenceStats?.activeUsers || 0,
-      pendingUsers: agenceStats?.pendingUsers || 0,
-      blockedUsers: agenceStats?.blockedUsers || 0,
-      
-      // Documents
-      pendingDocuments: documentsStats?.totalElements || 0,
-      
-      // Health
-      systemHealth: dashboardData.agenceService.health?.status || 'UNKNOWN'
-    };
-  }, [dashboardData]);
-
-  const chartData = useMemo(() => {
-    if (!combinedStatistics) return [];
-
-    return [
-      { name: 'Clients Actifs', value: combinedStatistics.activeClients, color: '#10B981' },
-      { name: 'En Attente', value: combinedStatistics.pendingClients, color: '#F59E0B' },
-      { name: 'Bloqués', value: combinedStatistics.blockedClients, color: '#EF4444' }
-    ];
-  }, [combinedStatistics]);
 
   // =====================================
   // EFFECTS
@@ -768,33 +1009,6 @@ const ComprehensiveAdminDashboard = () => {
       ))}
     </>
   );
-
-  /**
-   * Safe error formatter - handles cases where ApiService.formatError might not exist
-   */
-  const safeFormatError = (error) => {
-    try {
-      // Try to use ApiService.formatError if it exists
-      if (ApiService && typeof ApiService.formatError === 'function') {
-        return ApiService.formatError(error);
-      }
-      
-      // Fallback error formatting
-      if (!error) return 'Une erreur inconnue s\'est produite';
-      
-      if (typeof error === 'string') return error;
-      
-      if (error.message) return error.message;
-      
-      if (error.error) return error.error;
-      
-      return 'Une erreur s\'est produite';
-      
-    } catch (formatError) {
-      console.error('❌ Error in safeFormatError:', formatError);
-      return 'Erreur de formatage des erreurs';
-    }
-  };
 
   /**
    * Main Content Renderer
