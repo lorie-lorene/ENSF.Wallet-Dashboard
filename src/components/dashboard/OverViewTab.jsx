@@ -6,7 +6,8 @@ import {
 import { 
   Users, UserCheck, TrendingUp, Building2, Shield, FileImage,
   ArrowUpRight, ArrowDownRight, Loader, RefreshCw, Plus, Eye,
-  BarChart3, Database, Wifi, Server, AlertTriangle, CheckCircle
+  BarChart3, Database, Wifi, Server, AlertTriangle, CheckCircle,
+  Clock, DollarSign 
 } from 'lucide-react';
 
 /**

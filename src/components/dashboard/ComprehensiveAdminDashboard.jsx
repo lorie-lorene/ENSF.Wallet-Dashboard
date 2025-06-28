@@ -126,12 +126,12 @@ const initializeDashboard = useCallback(async () => {
 
     // Execute all data fetching operations
     const results = await Promise.allSettled([
-      fetchUserServiceData(),           // Now fetches REAL client data
+      //fetchUserServiceData(),           // Now fetches REAL client data
       fetchAgenceServiceDashboard(),    // AgenceService admin data
       fetchSystemHealth(),              // System health check
       fetchPendingDocuments(),          // Real pending documents
       fetchRecentActivity(),            // Recent system activity
-      fetchRealClientData(0, 10)        // First 10 real clients for overview
+      //fetchRealClientData(0, 10)        // First 10 real clients for overview
     ]);
 
     // Log results for debugging
