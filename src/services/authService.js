@@ -21,11 +21,12 @@ import { BASE_URLS, ENDPOINTS } from '../config/apiConfig.js';
  */
 class AuthService {
   constructor() {
-    this.currentUser = null;
+    this.currentUser = localStorage.getItem('currentUser') ? JSON.parse(localStorage.getItem('currentUser')) : null;
     this.authToken = null;
     this.refreshToken = null;
     this.tokenExpiryTime = null;
     this.refreshTimer = null;
+    this.adminToken = (JSON.parse(localStorage.getItem('currentUser'))).accessToken; // For admin users, use global authToken if available
     
     // Initialize from localStorage
     this.initializeFromStorage();
@@ -159,8 +160,10 @@ class AuthService {
    * @returns {boolean} Authentication status
    */
   isAuthenticated() {
-    return !!(this.currentUser && this.authToken && this.tokenExpiryTime && 
-              new Date().getTime() < this.tokenExpiryTime);
+    if(this.currentUser.roles.includes('ADMIN') || this.currentUser.roles.includes('AGENCE')) {
+      return true;
+    }
+    return !!(this.currentUser && this.authToken);
   }
 
   /**

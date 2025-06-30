@@ -79,7 +79,7 @@ const UsersManagementTab = ({
    */
   const fetchUserStatistics = async () => {
     try {
-      const response = await ApiService.getAgenceUserStatistics();
+      const response = await ApiService.agence.getAgenceUserStatistics();
       if (response.success) {
         setUserStats(response.data);
       }
@@ -144,7 +144,7 @@ const UsersManagementTab = ({
    */
   const handleBlockUser = async (userId, reason) => {
     try {
-      const response = await ApiService.blockUser(userId, reason);
+      const response = await ApiService.agence.blockUser(userId, reason);
       if (response.success) {
         await onRefresh.users();
         alert('Utilisateur bloqué avec succès');
@@ -162,7 +162,7 @@ const UsersManagementTab = ({
    */
   const handleUnblockUser = async (userId) => {
     try {
-      const response = await ApiService.unblockUser(userId);
+      const response = await ApiService.agence.unblockUser(userId);
       if (response.success) {
         await onRefresh.users();
         alert('Utilisateur débloqué avec succès');

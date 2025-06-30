@@ -170,9 +170,12 @@ class UserService {
       this.ensureAuthenticated();
       console.log('📊 Fetching user statistics');
 
+      console.log('🔗 Requesting user statistics from:', `${this.baseUrl}${ENDPOINTS.USER_SERVICE.STATISTICS}`);
       const response = await httpClient.get(
         `${this.baseUrl}${ENDPOINTS.USER_SERVICE.STATISTICS}`
       );
+
+      console.log(`✅ User statistics fetched: ${response.data.totalUsers} users`);
 
       console.log('✅ User statistics fetched successfully');
       return response.data;

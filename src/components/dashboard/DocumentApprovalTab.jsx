@@ -62,7 +62,7 @@ const DocumentApprovalTab = ({
    */
   const fetchDocumentStatistics = async () => {
     try {
-      const response = await ApiService.getDocumentStatistics();
+      const response = await ApiService.agence.getDocumentStatistics();
       if (response.success) {
         setDocumentStats(response.data);
       }
@@ -76,7 +76,7 @@ const DocumentApprovalTab = ({
    */
   const fetchDocumentForReview = async (documentId) => {
     try {
-      const response = await ApiService.getDocumentForReview(documentId);
+      const response = await ApiService.agence.getDocumentForReview(documentId);
       if (response.success) {
         setReviewDocument(response.data);
         setModals(prev => ({
@@ -96,7 +96,7 @@ const DocumentApprovalTab = ({
    * Handle document approval
    */
   const handleApproval = async (documentId, comment = '') => {
-    const result = await onAction.approveDocument(documentId, { 
+    const result = await ApiService.agence.approveDocument(documentId, { 
       comment,
       approvedAt: new Date().toISOString()
     });
@@ -120,7 +120,7 @@ const DocumentApprovalTab = ({
       return;
     }
 
-    const result = await onAction.rejectDocument(documentId, { 
+    const result = await ApiService.agence.rejectDocument(documentId, { 
       reason,
       rejectedAt: new Date().toISOString()
     });
@@ -146,7 +146,7 @@ const DocumentApprovalTab = ({
 
     setBulkActionLoading(true);
     try {
-      const response = await ApiService.bulkApproveDocuments(selectedDocuments, {
+      const response = await ApiService.agence.bulkApproveDocuments(selectedDocuments, {
         comment: 'Approbation en lot',
         approvedAt: new Date().toISOString()
       });
@@ -181,7 +181,7 @@ const DocumentApprovalTab = ({
 
     setBulkActionLoading(true);
     try {
-      const response = await ApiService.bulkRejectDocuments(selectedDocuments, {
+      const response = await ApiService.agence.bulkRejectDocuments(selectedDocuments, {
         reason,
         rejectedAt: new Date().toISOString()
       });
